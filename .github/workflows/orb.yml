@@ -11,6 +11,10 @@ on:
         description: 'Test mode: scan last session, ignore time window'
         type: boolean
         default: false
+      ping:
+        description: 'Only send a Telegram test message'
+        type: boolean
+        default: false
       backtest:
         description: 'Backtest mode: past signals + results sent to Telegram'
         type: boolean
@@ -39,8 +43,15 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
 
+      - name: Telegram ping
+        if: ${{ inputs.ping }}
+        run: python orb_scanner.py --ping
+        env:
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+
       - name: Backtest
-        if: ${{ inputs.backtest }}
+        if: ${{ inputs.backtest && !inputs.ping }}
         run: python orb_scanner.py --backtest "$DAYS"
         env:
           DAYS: ${{ inputs.days }}
@@ -48,14 +59,14 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
 
       - name: Live scan
-        if: ${{ !inputs.backtest }}
+        if: ${{ !inputs.backtest && !inputs.ping }}
         run: python orb_scanner.py ${{ inputs.force && '--force' || '' }}
         env:
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
 
       - name: Save sent-signal state
-        if: ${{ !inputs.backtest }}
+        if: ${{ !inputs.backtest && !inputs.ping }}
         run: |
           git config user.name "scanner-bot"
           git config user.email "scanner-bot@users.noreply.github.com"
