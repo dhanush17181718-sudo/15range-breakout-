@@ -81,13 +81,19 @@ def to_ist(df):
 def send(msg):
     print(msg, "\n")
     if not TG_TOKEN or not TG_CHAT_ID:
-        print("(Telegram keys missing, message not sent)")
-        return
+        print("ERROR: TG_TOKEN or TG_CHAT_ID is empty. Secrets are missing or misnamed.")
+        return False
     try:
-        requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
-                      data={"chat_id": TG_CHAT_ID, "text": msg}, timeout=15)
+        r = requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
+                          data={"chat_id": TG_CHAT_ID, "text": msg}, timeout=15)
+        if r.status_code != 200:
+            print(f"ERROR: Telegram rejected the message. HTTP {r.status_code}: {r.text}")
+            return False
+        print("Telegram: message sent OK")
+        return True
     except Exception as e:
-        print("Telegram error:", e)
+        print("ERROR: could not reach Telegram:", e)
+        return False
 
 
 def send_file(path, caption=""):
@@ -95,9 +101,11 @@ def send_file(path, caption=""):
         return
     try:
         with open(path, "rb") as f:
-            requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/sendDocument",
-                          data={"chat_id": TG_CHAT_ID, "caption": caption},
-                          files={"document": f}, timeout=30)
+            r = requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/sendDocument",
+                              data={"chat_id": TG_CHAT_ID, "caption": caption},
+                              files={"document": f}, timeout=30)
+            if r.status_code != 200:
+                print(f"ERROR: Telegram rejected the file. HTTP {r.status_code}: {r.text}")
     except Exception as e:
         print("Telegram file error:", e)
 
@@ -168,6 +176,7 @@ def simulate(d, t, side, entry, stop):
 def backtest(period):
     now = dt.datetime.now(IST)
     data = download(get_symbols(), period)
+    print(f"Loaded 15m data for {len(data)} stocks")
     rows = []
     for s, df in data.items():
         df = to_ist(df)
@@ -243,7 +252,8 @@ def backtest(period):
 
 def main():
     if "--ping" in sys.argv:
-        send("✅ Telegram connection works. ORB scanner is ready.")
+        if not send("✅ Telegram connection works. ORB scanner is ready."):
+            sys.exit(1)                                    # make the workflow show a red cross
         return
 
     if "--backtest" in sys.argv:
@@ -264,6 +274,7 @@ def main():
             return
 
     data = download(get_symbols())
+    print(f"Loaded 15m data for {len(data)} stocks")
     state = load_state()
     day_key = now.strftime("%Y-%m-%d")
     sent = set(state.get(day_key, []))
@@ -296,6 +307,8 @@ def main():
     if not force:
         with open(STATE_FILE, "w") as f:
             json.dump({day_key: sorted(sent)}, f)
+    if force and found == 0:
+        send(f"[TEST] Scan finished. Stocks scanned: {len(data)}. Signals in last session: 0.")
     print(f"Done. New signals: {found}")
 
 
