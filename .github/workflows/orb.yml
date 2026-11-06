@@ -2,14 +2,23 @@ name: ORB Scanner
 
 on:
   schedule:
-    - cron: '0,15,30,45 5 * * 1-5'
-    - cron: '0,15 6 * * 1-5'
+    # Cron is in UTC (IST = UTC + 5:30)
+    - cron: '0,15,30,45 5 * * 1-5'   # 10:30, 10:45, 11:00, 11:15 IST
+    - cron: '0,15 6 * * 1-5'         # 11:30, 11:45 IST (11:45 = catch-up run)
   workflow_dispatch:
     inputs:
       force:
         description: 'Test mode: scan last session, ignore time window'
         type: boolean
         default: false
+      backtest:
+        description: 'Backtest mode: past signals + results sent to Telegram'
+        type: boolean
+        default: false
+      days:
+        description: 'Backtest period, e.g. 7d, 30d, 60d (max 60d)'
+        type: string
+        default: '30d'
 
 permissions:
   contents: write
@@ -21,7 +30,7 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -29,11 +38,24 @@ jobs:
           python-version: '3.11'
           cache: pip
       - run: pip install -r requirements.txt
-      - run: python orb_scanner.py ${{ inputs.force && '--force' || '' }}
+
+      - name: Backtest
+        if: ${{ inputs.backtest }}
+        run: python orb_scanner.py --backtest "$DAYS"
+        env:
+          DAYS: ${{ inputs.days }}
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+
+      - name: Live scan
+        if: ${{ !inputs.backtest }}
+        run: python orb_scanner.py ${{ inputs.force && '--force' || '' }}
         env:
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+
       - name: Save sent-signal state
+        if: ${{ !inputs.backtest }}
         run: |
           git config user.name "scanner-bot"
           git config user.email "scanner-bot@users.noreply.github.com"
